@@ -1,0 +1,159 @@
+DROP DATABASE IF EXISTS TIENDA;
+CREATE DATABASE TIENDA;
+USE TIENDA;
+
+CREATE TABLE PRODUCTOS(ID_PRODUCTO INT PRIMARY KEY AUTO_INCREMENT, NOMBRE VARCHAR(200), PRECIO DECIMAL(10,2), STOCK INT);
+CREATE TABLE CLIENTES(ID_CLIENTE INT PRIMARY KEY AUTO_INCREMENT, NOMBRE VARCHAR(255), CORREO VARCHAR(100), TELEFONO VARCHAR(50));
+CREATE TABLE VENTAS(ID_VENTA INT PRIMARY KEY AUTO_INCREMENT, ID_CLIENTE INT,TOTAL DECIMAL(10,2),FECHA_VENTA DATETIME, CONSTRAINT FK_VENTA_CLIENTE FOREIGN KEY (ID_CLIENTE) REFERENCES CLIENTES(ID_CLIENTE));
+CREATE TABLE DETALLES_VENTAS(ID_DETALLE_V INT PRIMARY KEY AUTO_INCREMENT, ID_PRODUCTO INT,ID_VENTA INT, CANTIDAD INT, PRECIO_UNITARIO DECIMAL(10,2), CONSTRAINT FK_DETTALEVENTA_VENTA FOREIGN KEY (ID_VENTA) REFERENCES VENTAS(ID_VENTA), CONSTRAINT FK_DETTALEVENTA_PRODUCTO FOREIGN KEY (ID_PRODUCTO) REFERENCES PRODUCTOS(ID_PRODUCTO));
+
+
+-- crear triger para descontar del stock los productos vendidos
+DELIMITER //
+
+CREATE TRIGGER ACTUALIZACION_STOCK
+AFTER INSERT ON  DETALLES_VENTAS
+FOR EACH ROW
+BEGIN
+	UPDATE PRODUCTOS
+    SET STOCK = STOCK - NEW.CANTIDAD
+    WHERE ID_PRODUCTO = NEW.ID_PRODUCTO;
+END //
+
+DELIMITER ; 
+
+-- CREAR PROCEDUR PARA REGISTRAR PRODUCTOS CLIENTES  Y VENTAS
+DELIMITER //
+CREATE PROCEDURE NUEVO_PRODUCTO(
+in nombre varchar(200), in  precio decimal(10,2), in cantidad int
+)
+begin
+	INSERT PRODUCTOS(nombre, precio, stock) VALUES(nombre, precio, cantidad);
+
+end //
+
+DELIMITER ;
+
+DELIMITER //
+CREATE PROCEDURE NUEVO_CLIENTE(
+in nombre varchar(200), in  correo varchar(100), in telefono varchar(50)
+)
+begin
+	INSERT PRODUCTOS(nombre, correo, telefono) VALUES(nombre, correo, telefono);
+
+end //
+
+DELIMITER ;
+DROP PROCEDURE IF EXISTS NUEVO_VENTA;
+DELIMITER //
+CREATE PROCEDURE NUEVO_VENTA(
+in p_id_cliente int, in  p_id_producto   int, p_cantidad  int
+)
+begin
+	
+	DECLARE PRECION_UNIDAD DECIMAL(10,2);
+    DECLARE v_ID_venta int;
+    DECLARE TOTAL DECIMAL(10,2);
+    
+    select PRECIO into PRECION_UNIDAD from PRODUCTOS WHERE id_producto = p_id_producto ;
+    SET TOTAL = PRECION_UNIDAD * p_cantidad;
+    INSERT INTO VENTAS(id_cliente, fecha_venta, total) VALUES (p_id_cliente,now(),TOTAL);
+    
+    SELECT max(ID_VENTA) into v_ID_venta  FROM VENTAS;
+    
+    INSERT INTO DETALLES_VENTAS(id_venta, id_producto, cantidad, precio_unitario) VALUES(v_ID_venta, p_id_producto, p_cantidad, PRECION_UNIDAD);
+	
+end //
+
+DELIMITER ;
+-- CUANDO YA HAYA UNA CUENTA Y QUIERES SEGUIR AUMENTONDO COMO AÑADIENDO PRODUCTOS SOBRE LA MISMA CUENTA.
+drop procedure if exists MISMA_ENTA;
+DELIMITER //
+CREATE PROCEDURE MISMA_ENTA(
+IN A_id_venta INT,IN A_id_producto INT,IN A_cantidad INT
+)
+BEGIN
+	
+    DECLARE ANTERIO_TOTAL   DECIMAL(10,2);
+	DECLARE PRECION_UNIDAD_M DECIMAL(10,2);
+    DECLARE SUM_TOTAL DECIMAL(10,2);
+    
+	select PRECIO into PRECION_UNIDAD_M from PRODUCTOS WHERE id_producto = A_id_producto;
+	select TOTAL into ANTERIO_TOTAL from VENTAS WHERE id_venta = A_id_venta;
+    SET SUM_TOTAL = (PRECION_UNIDAD_M*A_cantidad)+ANTERIO_TOTAL;
+	INSERT INTO DETALLES_VENTAS(id_venta, id_producto, cantidad, precio_unitario) VALUES(A_id_venta,A_id_producto,A_cantidad, PRECION_UNIDAD_M);
+    
+    UPDATE VENTAS
+    SET TOTAL = SUM_TOTAL
+    WHERE ID_VENTA = A_id_venta;
+    
+END //
+DELIMITER ;
+
+
+
+drop FUNCTION if exists TOTAL_POR_USUARIO;
+
+-- funcione para calcular el total de ventas realizadas por un usuario en un rango de fechas
+DELIMITER //
+CREATE FUNCTION TOTAL_POR_USUARIO(i_ID_USUARIO INT, i_fecha_inicio datetime, i_fecha_fin datetime) RETURNS decimal(10,2) deterministic
+begin
+	declare resultado decimal(10,2);
+    
+    SELECT sum(TOTAL) into resultado  FROM tienda.ventas
+		where ID_CLIENTE = i_ID_USUARIO and FECHA_VENTA between i_fecha_inicio and i_fecha_fin;
+        
+    RETURN  resultado;
+end //
+
+DELIMITER ;
+
+select TOTAL_POR_USUARIO(1,'2024-08-01','2024-08-08') as total;
+
+
+CREATE VIEW VISTA_VENTAS_CLIENTES  AS 
+SELECT  C.ID_CLIENTE, C.NOMBRE AS 'NOMBRE CLIENTE',P.NOMBRE AS 'NOMBRE PRODUCTO', SUM(DV.CANTIDAD*PRECIO_UNITARIO) AS "TOTAL DE COMPRAS POR PRODUCTO"  FROM DETALLES_VENTAS AS DV
+JOIN PRODUCTOS AS P ON DV.ID_PRODUCTO = P.ID_PRODUCTO
+JOIN VENTAS AS V ON DV.ID_VENTA = V.ID_VENTA
+JOIN CLIENTES AS C ON C.ID_CLIENTE = V.ID_CLIENTE
+GROUP BY  C.ID_CLIENTE, C.NOMBRE,P.NOMBRE;
+
+
+-- Insertar productos
+INSERT INTO PRODUCTOS (nombre, precio, stock) VALUES 
+('Laptop', 1200.00, 10),
+('Mouse', 25.00, 50),
+('Teclado', 45.00, 30);
+
+-- Insertar clientes
+INSERT INTO CLIENTES (nombre, correo, telefono) VALUES 
+('Carlos Perez', 'carlos@example.com', '555-1234'),
+('Laura Gomez', 'laura@example.com', '555-5678');
+
+-- Insertar ventas
+INSERT INTO VENTAS (id_cliente, fecha_venta, total) VALUES 
+(1, '2024-08-01', 1250.00),
+(2, '2024-08-02', 70.00);
+
+-- Insertar detalles de ventas
+INSERT INTO DETALLES_VENTAS (id_venta, id_producto, cantidad, precio_unitario) VALUES 
+(1, 1, 3, 1200.00),
+(1, 2, 19, 25.00),
+(2, 3, 10, 45.00),
+(2, 2, 1, 25.00);
+
+
+-- CALL NUEVO_VENTA(p_id_cliente,p_id_producto,p_cantidad);
+CALL NUEVO_VENTA(1,1,3);
+CALL NUEVO_VENTA(1,2,3);
+CALL NUEVO_VENTA(2,3,3);
+CALL NUEVO_VENTA(2,2,3);
+
+-- CALL MISMA_ENTA(A_id_venta,A_id_producto,A_cantidad) | AÑADIR MAS PRODUCTOS A LA MISMA VENTA.
+CALL MISMA_ENTA(6,2,3);
+CALL MISMA_ENTA(6,3,3);
+CALL MISMA_ENTA(6,3,3);
+CALL MISMA_ENTA(6,1,3);
+
+SELECT * FROM VISTA_VENTAS_CLIENTES;
+
