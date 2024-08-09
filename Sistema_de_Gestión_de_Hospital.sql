@@ -50,7 +50,7 @@ JOIN PACIENTES P ON C.ID_PACIENTE = P.ID_PACIENTE;
 
 -- Consultar la vista
 SELECT * FROM VISTA_CITAS_DOCTOR WHERE DOCTOR = 'Dr. Juan Perez';
-
+-- trigger para registrar la fecha de modificación de una cita
 DELIMITER //
 CREATE TRIGGER TRIGGER_MODIFICACION_CITA
 BEFORE UPDATE ON CITAS
@@ -60,6 +60,7 @@ BEGIN
 END //
 DELIMITER ;
 
+-- procedimiento almacenado para registrar una nueva cita
 DELIMITER //
 CREATE PROCEDURE NUEVA_CITA(
     IN p_id_doctor INT,
